@@ -1,6 +1,8 @@
 # Feature options for plugins without external deps
 option('ivas_xdpuinfer', type : 'feature', value : 'auto')
 option('ivas_xboundingbox', type : 'feature', value : 'auto')
+option('vvas_xpassthru', type : 'feature', value : 'auto')
+option('vvas_xstereopipeline', type : 'feature', value : 'auto')
 
 # ivas_xdpuinfer Model selection
 option('YOLOV3', type: 'string', value: '1',
