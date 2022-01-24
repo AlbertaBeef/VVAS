@@ -224,11 +224,7 @@ extern "C"
     infer_meta = ((GstInferenceMeta *) gst_buffer_get_meta ((GstBuffer *)
             frameinfo->inframe->app_priv, gst_inference_meta_api_get_type ()));
     if (infer_meta == NULL) {
-      LOG_MESSAGE (LOG_LEVEL_DEBUG,
-          "ivas meta data is not available for postdpu");
-      return false;
-    } else {
-      LOG_MESSAGE (LOG_LEVEL_DEBUG, "ivas_mata ptr %p", infer_meta);
+      LOG_MESSAGE (LOG_LEVEL_DEBUG, "ivas meta data is not available");
     }
 
     if (frameinfo->inframe->props.fmt == IVAS_VFMT_Y_UV8_420) {
