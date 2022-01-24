@@ -10,7 +10,7 @@
 	"font" : 3,
 	"thickness" : 2,
 	"debug_level" : 1,
-	"text_color" : { "blue" : 0, "green" : 0, "red" : 0 },
+	"text_color" : { "blue" : 0, "green" : 255, "red" : 0 }
       }
     }
   ]

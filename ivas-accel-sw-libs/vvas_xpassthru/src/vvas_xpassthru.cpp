@@ -134,6 +134,8 @@ extern "C"
     kpriv->text_color = {255, 255, 255};
 
 
+    /* parse config */
+
     val = json_object_get (jconfig, "debug_level");
     if (!val || !json_is_integer (val))
         log_level = LOG_LEVEL_WARNING;
