@@ -10,8 +10,8 @@
 	"font_size" : 1,
 	"font" : 3,
 	"thickness" : 2,
-	"x_offset" : 15,
-	"y_offset" : 30,
+	"x_offset" : 16,
+	"y_offset" : 32,
 	"text_color" : { "blue" : 0, "green" : 255, "red" : 0 }
       }
     }

@@ -45,7 +45,6 @@ struct overlayframe_info
   Mat NV12image;
   Mat lumaImg;
   Mat chromaImg;
-  int y_offset;
 };
 
 
@@ -131,8 +130,8 @@ extern "C"
     kpriv->font_size = 0.5;
     kpriv->font = 0;
     kpriv->line_thickness = 1;
-    kpriv->x_offset = 10;
-    kpriv->y_offset = 10;
+    kpriv->x_offset = 16;
+    kpriv->y_offset = 32;
     kpriv->text_color = {255, 255, 255};
 
 
@@ -211,12 +210,10 @@ extern "C"
   {
     LOG_MESSAGE (LOG_LEVEL_DEBUG, "enter");
     GstInferenceMeta *infer_meta = NULL;
-    char *pstr;
 
     vvas_xpassthrupriv *kpriv = (vvas_xpassthrupriv *) handle->kernel_priv;
     struct overlayframe_info *frameinfo = &(kpriv->frameinfo);
 
-    frameinfo->y_offset = 0;
     frameinfo->inframe = input[0];
     char *indata = (char *) frameinfo->inframe->vaddr[0];
     char *lumaBuf = (char *) frameinfo->inframe->vaddr[0];
