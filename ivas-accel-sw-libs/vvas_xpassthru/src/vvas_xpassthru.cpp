@@ -56,6 +56,7 @@ struct vvas_xpassthrupriv
   float font_size;
   unsigned int font;
   int line_thickness;
+  int x_offset;
   int y_offset;
   color text_color;
   struct overlayframe_info frameinfo;
@@ -95,16 +96,16 @@ display_frame_counter (gpointer kpriv_ptr)
 
     /* Display frame counter */
     convert_rgb_to_yuv_clrs (kpriv->text_color, &yScalar, &uvScalar);
-    putText (frameinfo->lumaImg, text_string, cv::Point (10, 10), 
+    putText (frameinfo->lumaImg, text_string, cv::Point (kpriv->x_offset, kpriv->y_offset), 
              kpriv->font, kpriv->font_size, Scalar (yScalar), 1, 1);
-    putText (frameinfo->chromaImg, text_string, cv::Point (10 / 2, 10 / 2),
+    putText (frameinfo->chromaImg, text_string, cv::Point (kpriv->x_offset / 2, kpriv->y_offset / 2),
              kpriv->font, kpriv->font_size / 2, Scalar (uvScalar), 1, 1);
 
   } else if (frameinfo->inframe->props.fmt == IVAS_VFMT_BGR8) {
     LOG_MESSAGE (LOG_LEVEL_DEBUG, "Displaying frame counter for BGR image");
 
     /* Display frame counter */
-    putText (frameinfo->image, text_string, cv::Point (10, 10),
+    putText (frameinfo->image, text_string, cv::Point (kpriv->x_offset, kpriv->y_offset),
              kpriv->font, kpriv->font_size, 
              Scalar (kpriv->text_color.blue, kpriv->text_color.green, kpriv->text_color.red), 1, 1);
   }
@@ -130,7 +131,8 @@ extern "C"
     kpriv->font_size = 0.5;
     kpriv->font = 0;
     kpriv->line_thickness = 1;
-    kpriv->y_offset = 0;
+    kpriv->x_offset = 10;
+    kpriv->y_offset = 10;
     kpriv->text_color = {255, 255, 255};
 
 
@@ -160,9 +162,15 @@ extern "C"
     else
         kpriv->line_thickness = json_integer_value (val);
 
+    val = json_object_get (jconfig, "x_offset");
+    if (!val || !json_is_integer (val))
+        kpriv->x_offset = 10;
+    else
+        kpriv->x_offset = json_integer_value (val);
+
     val = json_object_get (jconfig, "y_offset");
     if (!val || !json_is_integer (val))
-        kpriv->y_offset = 0;
+        kpriv->y_offset = 10;
     else
         kpriv->y_offset = json_integer_value (val);
 
