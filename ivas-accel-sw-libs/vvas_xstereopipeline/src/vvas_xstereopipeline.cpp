@@ -30,11 +30,6 @@ int log_level = LOG_LEVEL_WARNING;
 using namespace cv;
 using namespace std;
 
-#define MAX_CLASS_LEN 1024
-#define MAX_LABEL_LEN 1024
-#define MAX_ALLOWED_CLASS 20
-#define MAX_ALLOWED_LABELS 20
-
 struct color
 {
   unsigned int blue;
@@ -42,36 +37,28 @@ struct color
   unsigned int red;
 };
 
-struct ivass_xclassification
-{
-  color class_color;
-  char class_name[MAX_CLASS_LEN];
-};
-
 struct overlayframe_info
 {
   IVASFrame *inframe;
+  IVASFrame *outframe;
   Mat image;
   Mat I420image;
   Mat NV12image;
   Mat lumaImg;
   Mat chromaImg;
-  int y_offset;
 };
 
 
 
 struct vvas_xstereopipelinepriv
 {
+  unsigned int frame_counter;
   float font_size;
   unsigned int font;
   int line_thickness;
+  int x_offset;
   int y_offset;
-  color label_color;
-  char label_filter[MAX_ALLOWED_LABELS][MAX_LABEL_LEN];
-  unsigned char label_filter_cnt;
-  unsigned short classes_count;
-  ivass_xclassification class_list[MAX_ALLOWED_CLASS];
+  color text_color;
   struct overlayframe_info frameinfo;
 };
 
@@ -88,141 +75,50 @@ convert_rgb_to_yuv_clrs (color clr, unsigned char *y, unsigned short *uv)
 }
 
 static gboolean
-overlay_node_foreach (GNode * node, gpointer kpriv_ptr)
+display_frame_counter (gpointer kpriv_ptr)
 {
   vvas_xstereopipelinepriv *kpriv = (vvas_xstereopipelinepriv *) kpriv_ptr;
   struct overlayframe_info *frameinfo = &(kpriv->frameinfo);
   LOG_MESSAGE (LOG_LEVEL_DEBUG, "enter");
 
-  GList *classes;
-  GstInferenceClassification *classification;
-  GstInferencePrediction *prediction = (GstInferencePrediction *) node->data;
+  char text_string[1024];
+  Size textsize;
 
-  /* On each children, iterate through the different associated classes */
-  for (classes = prediction->classifications;
-      classes; classes = g_list_next (classes)) {
-    classification = (GstInferenceClassification *) classes->data;
+  sprintf (text_string, "Frame : %04d", kpriv->frame_counter++ );
 
-    //int idx = ivas_classification_is_allowed ((char *)
-    //    classification->class_label, kpriv);
-    //if (kpriv->classes_count && idx == -1)
-    //  continue;
-    int idx = 0;
+  LOG_MESSAGE (LOG_LEVEL_INFO, text_string );
 
-    color clr;
-    if (kpriv->classes_count) {
-      clr = {
-      kpriv->class_list[idx].class_color.blue,
-            kpriv->class_list[idx].class_color.green,
-            kpriv->class_list[idx].class_color.red};
-    } else {
-      /* If there are no classes specified, we will go with default blue */
-      clr = {
-      255, 0, 0};
-    }
+  /* Check whether the frame is NV12 or BGR and act accordingly */
+  if (frameinfo->outframe->props.fmt == IVAS_VFMT_Y_UV8_420) {
+    LOG_MESSAGE (LOG_LEVEL_DEBUG, "Displaying frame counter for NV12 image");
+    unsigned char yScalar;
+    unsigned short uvScalar;
 
-    char label_string[MAX_LABEL_LEN];
-    bool label_present;
-    Size textsize;
-    //label_present = get_label_text (classification, kpriv, label_string);
-    label_present = FALSE;
+    /* Display frame counter */
+    convert_rgb_to_yuv_clrs (kpriv->text_color, &yScalar, &uvScalar);
+    putText (frameinfo->lumaImg, text_string, cv::Point (kpriv->x_offset, kpriv->y_offset), 
+             kpriv->font, kpriv->font_size, Scalar (yScalar), 1, 1);
+    putText (frameinfo->chromaImg, text_string, cv::Point (kpriv->x_offset / 2, kpriv->y_offset / 2),
+             kpriv->font, kpriv->font_size / 2, Scalar (uvScalar), 1, 1);
 
-    if (label_present) {
-      int baseline;
-      textsize = getTextSize (label_string, kpriv->font,
-          kpriv->font_size, 1, &baseline);
-      /* Get y offset to use in case of classification model */
-      if ((prediction->bbox.height < 1) && (prediction->bbox.width < 1)) {
-        if (kpriv->y_offset) {
-          frameinfo->y_offset = kpriv->y_offset;
-        } else {
-          frameinfo->y_offset = (frameinfo->inframe->props.height * 0.10);
-        }
-      }
-    }
+  } else if (frameinfo->outframe->props.fmt == IVAS_VFMT_BGR8) {
+    LOG_MESSAGE (LOG_LEVEL_DEBUG, "Displaying frame counter for BGR image");
 
-    LOG_MESSAGE (LOG_LEVEL_INFO,
-        "RESULT: (prediction node %ld) %s(%d) %d %d %d %d (%f)",
-        prediction->prediction_id,
-        label_present ? classification->class_label : NULL,
-        classification->class_id, prediction->bbox.x, prediction->bbox.y,
-        prediction->bbox.width + prediction->bbox.x,
-        prediction->bbox.height + prediction->bbox.y,
-        classification->class_prob);
+    /* Display frame counter */
+    putText (frameinfo->image, text_string, cv::Point (kpriv->x_offset, kpriv->y_offset),
+             kpriv->font, kpriv->font_size, 
+             Scalar (kpriv->text_color.blue, kpriv->text_color.green, kpriv->text_color.red), 1, 1);
+  } else if (frameinfo->outframe->props.fmt == IVAS_VFMT_YUYV8) {
+    LOG_MESSAGE (LOG_LEVEL_DEBUG, "Displaying frame counter for YUV 4:2:2 image");
+    unsigned char yScalar;
+    unsigned short uvScalar;
 
-    /* Check whether the frame is NV12 or BGR and act accordingly */
-    if (frameinfo->inframe->props.fmt == IVAS_VFMT_Y_UV8_420) {
-      LOG_MESSAGE (LOG_LEVEL_DEBUG, "Drawing rectangle for NV12 image");
-      unsigned char yScalar;
-      unsigned short uvScalar;
-      convert_rgb_to_yuv_clrs (clr, &yScalar, &uvScalar);
-      /* Draw rectangle on y an uv plane */
-      int new_xmin = floor (prediction->bbox.x / 2) * 2;
-      int new_ymin = floor (prediction->bbox.y / 2) * 2;
-      int new_xmax =
-          floor ((prediction->bbox.width + prediction->bbox.x) / 2) * 2;
-      int new_ymax =
-          floor ((prediction->bbox.height + prediction->bbox.y) / 2) * 2;
-      Size test_rect (new_xmax - new_xmin, new_ymax - new_ymin);
-
-      if (!(!prediction->bbox.x && !prediction->bbox.y)) {
-        rectangle (frameinfo->lumaImg, Point (new_xmin,
-              new_ymin), Point (new_xmax,
-              new_ymax), Scalar (yScalar), kpriv->line_thickness, 1, 0);
-        rectangle (frameinfo->chromaImg, Point (new_xmin / 2,
-              new_ymin / 2), Point (new_xmax / 2,
-              new_ymax / 2), Scalar (uvScalar), kpriv->line_thickness, 1, 0);
-      }
-
-      if (label_present) {
-        /* Draw filled rectangle for labelling, both on y and uv plane */
-        rectangle (frameinfo->lumaImg, Rect (Point (new_xmin,
-                    new_ymin - textsize.height), textsize),
-            Scalar (yScalar), FILLED, 1, 0);
-        textsize.height /= 2;
-        textsize.width /= 2;
-        rectangle (frameinfo->chromaImg, Rect (Point (new_xmin / 2,
-                    new_ymin / 2 - textsize.height), textsize),
-            Scalar (uvScalar), FILLED, 1, 0);
-
-        /* Draw label text on the filled rectanngle */
-        convert_rgb_to_yuv_clrs (kpriv->label_color, &yScalar, &uvScalar);
-        putText (frameinfo->lumaImg, label_string, cv::Point (new_xmin,
-                new_ymin + frameinfo->y_offset), kpriv->font, kpriv->font_size,
-            Scalar (yScalar), 1, 1);
-        putText (frameinfo->chromaImg, label_string, cv::Point (new_xmin / 2,
-                new_ymin / 2 + frameinfo->y_offset / 2), kpriv->font,
-            kpriv->font_size / 2, Scalar (uvScalar), 1, 1);
-      }
-    } else if (frameinfo->inframe->props.fmt == IVAS_VFMT_BGR8) {
-      LOG_MESSAGE (LOG_LEVEL_DEBUG, "Drawing rectangle for BGR image");
-
-      if (!(!prediction->bbox.x && !prediction->bbox.y)) {
-        /* Draw rectangle over the dectected object */
-        rectangle (frameinfo->image, Point (prediction->bbox.x,
-              prediction->bbox.y),
-          Point (prediction->bbox.width + prediction->bbox.x,
-              prediction->bbox.height + prediction->bbox.y), Scalar (clr.blue,
-              clr.green, clr.red), kpriv->line_thickness, 1, 0);
-      }
-
-      if (label_present) {
-        /* Draw filled rectangle for label */
-        rectangle (frameinfo->image, Rect (Point (prediction->bbox.x,
-                    prediction->bbox.y - textsize.height), textsize),
-            Scalar (clr.blue, clr.green, clr.red), FILLED, 1, 0);
-
-        /* Draw label text on the filled rectanngle */
-        putText (frameinfo->image, label_string,
-            cv::Point (prediction->bbox.x,
-                prediction->bbox.y + frameinfo->y_offset), kpriv->font,
-            kpriv->font_size, Scalar (kpriv->label_color.blue,
-                kpriv->label_color.green, kpriv->label_color.red), 1, 1);
-      }
-    }
+    /* Display frame counter */
+    convert_rgb_to_yuv_clrs (kpriv->text_color, &yScalar, &uvScalar);
+    putText (frameinfo->image, text_string, cv::Point (kpriv->x_offset, kpriv->y_offset),
+             kpriv->font, kpriv->font_size, 
+             Scalar (yScalar, uvScalar), 1, 1);
   }
-
-
 
   return FALSE;
 }
@@ -237,20 +133,20 @@ extern "C"
         (vvas_xstereopipelinepriv *) calloc (1, sizeof (vvas_xstereopipelinepriv));
 
     json_t *jconfig = handle->kernel_config;
-    json_t *val, *karray = NULL, *classes = NULL;
+    json_t *val, *karray = NULL;
 
     /* Initialize config params with default values */
     log_level = LOG_LEVEL_WARNING;
-    kpriv->font_size = 0.5;
-    kpriv->font = 0;
-    kpriv->line_thickness = 1;
-    kpriv->y_offset = 0;
-    kpriv->label_color = {0, 0, 0};
-    strcpy(kpriv->label_filter[0], "class");
-    strcpy(kpriv->label_filter[1], "probability");
-    kpriv->label_filter_cnt = 2;
-    kpriv->classes_count = 0;
+    kpriv->frame_counter = 0;
+    kpriv->font_size = 1;
+    kpriv->font = 3;
+    kpriv->line_thickness = 2;
+    kpriv->x_offset = 16;
+    kpriv->y_offset = 32;
+    kpriv->text_color = {255, 255, 255};
 
+
+    /* parse config */
 
     val = json_object_get (jconfig, "debug_level");
     if (!val || !json_is_integer (val))
@@ -276,88 +172,32 @@ extern "C"
     else
         kpriv->line_thickness = json_integer_value (val);
 
+    val = json_object_get (jconfig, "x_offset");
+    if (!val || !json_is_integer (val))
+        kpriv->x_offset = 10;
+    else
+        kpriv->x_offset = json_integer_value (val);
+
     val = json_object_get (jconfig, "y_offset");
     if (!val || !json_is_integer (val))
-        kpriv->y_offset = 0;
+        kpriv->y_offset = 10;
     else
         kpriv->y_offset = json_integer_value (val);
 
     /* get label color array */
-    karray = json_object_get (jconfig, "label_color");
+    karray = json_object_get (jconfig, "text_color");
     if (!karray)
     {
-      LOG_MESSAGE (LOG_LEVEL_ERROR, "failed to find label_color");
+      LOG_MESSAGE (LOG_LEVEL_ERROR, "failed to find text_color");
       return -1;
     } else
     {
-      kpriv->label_color.blue =
+      kpriv->text_color.blue =
           json_integer_value (json_object_get (karray, "blue"));
-      kpriv->label_color.green =
+      kpriv->text_color.green =
           json_integer_value (json_object_get (karray, "green"));
-      kpriv->label_color.red =
+      kpriv->text_color.red =
           json_integer_value (json_object_get (karray, "red"));
-    }
-
-    karray = json_object_get (jconfig, "label_filter");
-
-    if (!json_is_array (karray)) {
-      LOG_MESSAGE (LOG_LEVEL_ERROR, "label_filter not found in the config\n");
-      return -1;
-    }
-    kpriv->label_filter_cnt = 0;
-    for (unsigned int index = 0; index < json_array_size (karray); index++) {
-      strcpy (kpriv->label_filter[index],
-          json_string_value (json_array_get (karray, index)));
-      kpriv->label_filter_cnt++;
-    }
-
-    /* get classes array */
-    karray = json_object_get (jconfig, "classes");
-    if (!karray) {
-      LOG_MESSAGE (LOG_LEVEL_ERROR, "failed to find key labels");
-      return -1;
-    }
-
-    if (!json_is_array (karray)) {
-      LOG_MESSAGE (LOG_LEVEL_ERROR, "labels key is not of array type");
-      return -1;
-    }
-    kpriv->classes_count = json_array_size (karray);
-    for (unsigned int index = 0; index < kpriv->classes_count; index++) {
-      classes = json_array_get (karray, index);
-      if (!classes) {
-        LOG_MESSAGE (LOG_LEVEL_ERROR, "failed to get class object");
-        return -1;
-      }
-
-      val = json_object_get (classes, "name");
-      if (!json_is_string (val)) {
-        LOG_MESSAGE (LOG_LEVEL_ERROR, "name is not found for array %d", index);
-        return -1;
-      } else {
-        strncpy (kpriv->class_list[index].class_name,
-            (char *) json_string_value (val), MAX_CLASS_LEN - 1);
-        LOG_MESSAGE (LOG_LEVEL_DEBUG, "name %s",
-            kpriv->class_list[index].class_name);
-      }
-
-      val = json_object_get (classes, "green");
-      if (!val || !json_is_integer (val))
-        kpriv->class_list[index].class_color.green = 0;
-      else
-        kpriv->class_list[index].class_color.green = json_integer_value (val);
-
-      val = json_object_get (classes, "blue");
-      if (!val || !json_is_integer (val))
-        kpriv->class_list[index].class_color.blue = 0;
-      else
-        kpriv->class_list[index].class_color.blue = json_integer_value (val);
-
-      val = json_object_get (classes, "red");
-      if (!val || !json_is_integer (val))
-        kpriv->class_list[index].class_color.red = 0;
-      else
-        kpriv->class_list[index].class_color.red = json_integer_value (val);
     }
 
     handle->kernel_priv = (void *) kpriv;
@@ -379,54 +219,116 @@ extern "C"
   uint32_t xlnx_kernel_start (IVASKernel * handle, int start,
       IVASFrame * input[MAX_NUM_OBJECT], IVASFrame * output[MAX_NUM_OBJECT])
   {
+    int plane_id;
+    unsigned int buffer_size;
+
     LOG_MESSAGE (LOG_LEVEL_DEBUG, "enter");
-    GstInferenceMeta *infer_meta = NULL;
-    char *pstr;
 
     vvas_xstereopipelinepriv *kpriv = (vvas_xstereopipelinepriv *) handle->kernel_priv;
     struct overlayframe_info *frameinfo = &(kpriv->frameinfo);
 
-    frameinfo->y_offset = 0;
-    frameinfo->inframe = input[0];
-    char *indata = (char *) frameinfo->inframe->vaddr[0];
-    char *lumaBuf = (char *) frameinfo->inframe->vaddr[0];
-    char *chromaBuf = (char *) frameinfo->inframe->vaddr[1];
-    infer_meta = ((GstInferenceMeta *) gst_buffer_get_meta ((GstBuffer *)
-            frameinfo->inframe->app_priv, gst_inference_meta_api_get_type ()));
-    if (infer_meta == NULL) {
-      LOG_MESSAGE (LOG_LEVEL_DEBUG,
-          "ivas meta data is not available for postdpu");
+    if ( input[0] == NULL )
+    {
+      LOG_MESSAGE (LOG_LEVEL_DEBUG, "input frame is not available");
       return false;
-    } else {
-      LOG_MESSAGE (LOG_LEVEL_DEBUG, "ivas_mata ptr %p", infer_meta);
+    }
+    if ( output[0] == NULL )
+    {
+      LOG_MESSAGE (LOG_LEVEL_DEBUG, "output frame is not available");
+      return false;
     }
 
-    if (frameinfo->inframe->props.fmt == IVAS_VFMT_Y_UV8_420) {
-      LOG_MESSAGE (LOG_LEVEL_DEBUG, "Input frame is in NV12 format\n");
+    frameinfo->inframe = input[0];
+    frameinfo->outframe = output[0];
+
+    LOG_MESSAGE (LOG_LEVEL_DEBUG, " input format = %d", frameinfo->inframe->props.fmt);
+    LOG_MESSAGE (LOG_LEVEL_DEBUG, " input height = %d", frameinfo->inframe->props.height);
+    LOG_MESSAGE (LOG_LEVEL_DEBUG, " input width  = %d", frameinfo->inframe->props.width);
+    LOG_MESSAGE (LOG_LEVEL_DEBUG, " input stride = %d", frameinfo->inframe->props.stride);
+    LOG_MESSAGE (LOG_LEVEL_DEBUG, " input memtype= %d", frameinfo->inframe->mem_type);
+    LOG_MESSAGE (LOG_LEVEL_DEBUG, " input planes = %d", frameinfo->inframe->n_planes);
+    LOG_MESSAGE (LOG_LEVEL_DEBUG, "output format = %d", frameinfo->outframe->props.fmt);
+    LOG_MESSAGE (LOG_LEVEL_DEBUG, "output height = %d", frameinfo->outframe->props.height);
+    LOG_MESSAGE (LOG_LEVEL_DEBUG, "output width  = %d", frameinfo->outframe->props.width);
+    LOG_MESSAGE (LOG_LEVEL_DEBUG, "output stride = %d", frameinfo->outframe->props.stride);
+    LOG_MESSAGE (LOG_LEVEL_DEBUG, "output planes = %d", frameinfo->outframe->n_planes);
+    LOG_MESSAGE (LOG_LEVEL_DEBUG, "output memtype= %d", frameinfo->outframe->mem_type);
+
+    if (frameinfo->inframe->props.fmt != frameinfo->outframe->props.fmt) {
+      LOG_MESSAGE (LOG_LEVEL_DEBUG, "input/output frames are not of same format");
+      return false;
+    }
+    if (frameinfo->inframe->props.height != frameinfo->outframe->props.height) {
+      LOG_MESSAGE (LOG_LEVEL_DEBUG, "input/output frames are not of same height");
+      return false;
+    }
+    //if (frameinfo->inframe->props.width != frameinfo->outframe->props.width) {
+    //  LOG_MESSAGE (LOG_LEVEL_DEBUG, "input/output frames are not of same width");
+    //  return false;
+    //}
+    //if (frameinfo->inframe->props.stride != frameinfo->outframe->props.stride) {
+    //  LOG_MESSAGE (LOG_LEVEL_DEBUG, "input/output frames are not of same stride");
+    //  return false;
+    //}
+    if (frameinfo->inframe->props.width != frameinfo->outframe->props.width * 2) {
+      LOG_MESSAGE (LOG_LEVEL_DEBUG, "input frame width is not 2x of output frame width");
+      return false;
+    }
+    if (frameinfo->inframe->props.stride != frameinfo->outframe->props.stride * 2) {
+      LOG_MESSAGE (LOG_LEVEL_DEBUG, "input frame stride is not 2x of output frame stride");
+      return false;
+    }
+    if ( frameinfo->inframe->n_planes != frameinfo->outframe->n_planes )
+    {
+      LOG_MESSAGE (LOG_LEVEL_DEBUG, "input/output planes are not same");
+      return false;
+    }
+
+    //for ( plane_id = 0; plane_id < frameinfo->inframe->n_planes; plane_id++ )
+    //{
+    //  LOG_MESSAGE (LOG_LEVEL_DEBUG, "copying plane %d of size %d", plane_id, frameinfo->inframe->size[plane_id] );
+    //  memcpy( frameinfo->outframe->vaddr[plane_id], frameinfo->inframe->vaddr[plane_id], frameinfo->inframe->size[plane_id] );
+    //}
+    if ( frameinfo->outframe->n_planes == 1 )
+    {
+      char *inPtr  = (char *)frameinfo->inframe->vaddr[0];
+      char *outPtr = (char *)frameinfo->outframe->vaddr[0];
+      int row;
+      for ( row = 0; row < frameinfo->outframe->props.height; row++ )
+      {
+        buffer_size = frameinfo->outframe->props.stride * frameinfo->outframe->props.height;
+        memcpy( outPtr, inPtr, frameinfo->outframe->props.stride );
+
+        inPtr  += frameinfo->inframe->props.stride;
+        outPtr += frameinfo->outframe->props.stride;
+      }
+    }
+
+    char *outdata = (char *) frameinfo->outframe->vaddr[0];
+    char *lumaBuf = (char *) frameinfo->outframe->vaddr[0];
+    char *chromaBuf = (char *) frameinfo->outframe->vaddr[1];
+
+    if (frameinfo->outframe->props.fmt == IVAS_VFMT_Y_UV8_420) {
+      LOG_MESSAGE (LOG_LEVEL_DEBUG, "Output frame is in NV12 format\n");
       frameinfo->lumaImg.create (input[0]->props.height, input[0]->props.stride,
           CV_8UC1);
       frameinfo->lumaImg.data = (unsigned char *) lumaBuf;
-      frameinfo->chromaImg.create (input[0]->props.height / 2,
-          input[0]->props.stride / 2, CV_16UC1);
+      frameinfo->chromaImg.create (output[0]->props.height / 2, output[0]->props.stride / 2, CV_16UC1);
       frameinfo->chromaImg.data = (unsigned char *) chromaBuf;
-    } else if (frameinfo->inframe->props.fmt == IVAS_VFMT_BGR8) {
-      LOG_MESSAGE (LOG_LEVEL_DEBUG, "Input frame is in BGR format\n");
-      frameinfo->image.create (input[0]->props.height,
-          input[0]->props.stride / 3, CV_8UC3);
-      frameinfo->image.data = (unsigned char *) indata;
+    } else if (frameinfo->outframe->props.fmt == IVAS_VFMT_BGR8) {
+      LOG_MESSAGE (LOG_LEVEL_DEBUG, "Output frame is in BGR format\n");
+      frameinfo->image.create (output[0]->props.height, output[0]->props.stride / 3, CV_8UC3);
+      frameinfo->image.data = (unsigned char *) outdata;
+    } else if (frameinfo->outframe->props.fmt == IVAS_VFMT_YUYV8) {
+      LOG_MESSAGE (LOG_LEVEL_DEBUG, "Output frame is in YUV 4:2:2 format\n");
+      frameinfo->image.create (output[0]->props.height, output[0]->props.stride / 2, CV_8UC2);
+      frameinfo->image.data = (unsigned char *) outdata;
     } else {
-      LOG_MESSAGE (LOG_LEVEL_WARNING, "Unsupported color format\n");
+      LOG_MESSAGE (LOG_LEVEL_WARNING, "Output frame is in Unsupported color format\n");
       return 0;
     }
 
-
-    /* Print the entire prediction tree */
-    pstr = gst_inference_prediction_to_string (infer_meta->prediction);
-    LOG_MESSAGE (LOG_LEVEL_DEBUG, "Prediction tree: \n%s", pstr);
-    free (pstr);
-
-    g_node_traverse (infer_meta->prediction->predictions, G_PRE_ORDER,
-        G_TRAVERSE_ALL, -1, overlay_node_foreach, kpriv);
+    display_frame_counter( kpriv );
 
     return 0;
   }
