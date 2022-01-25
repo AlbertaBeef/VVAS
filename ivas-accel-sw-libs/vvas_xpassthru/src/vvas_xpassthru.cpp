@@ -107,6 +107,16 @@ display_frame_counter (gpointer kpriv_ptr)
     putText (frameinfo->image, text_string, cv::Point (kpriv->x_offset, kpriv->y_offset),
              kpriv->font, kpriv->font_size, 
              Scalar (kpriv->text_color.blue, kpriv->text_color.green, kpriv->text_color.red), 1, 1);
+  } else if (frameinfo->inframe->props.fmt == IVAS_VFMT_YUYV8) {
+    LOG_MESSAGE (LOG_LEVEL_DEBUG, "Displaying frame counter for YUV 4:2:2 image");
+    unsigned char yScalar;
+    unsigned short uvScalar;
+
+    /* Display frame counter */
+    convert_rgb_to_yuv_clrs (kpriv->text_color, &yScalar, &uvScalar);
+    putText (frameinfo->image, text_string, cv::Point (kpriv->x_offset, kpriv->y_offset),
+             kpriv->font, kpriv->font_size, 
+             Scalar (yScalar, uvScalar), 1, 1);
   }
 
   return FALSE;
@@ -236,6 +246,11 @@ extern "C"
       LOG_MESSAGE (LOG_LEVEL_DEBUG, "Input frame is in BGR format\n");
       frameinfo->image.create (input[0]->props.height,
           input[0]->props.stride / 3, CV_8UC3);
+      frameinfo->image.data = (unsigned char *) indata;
+    } else if (frameinfo->inframe->props.fmt == IVAS_VFMT_YUYV8) {
+      LOG_MESSAGE (LOG_LEVEL_DEBUG, "Input frame is in YUV 4:2:2 format\n");
+      frameinfo->image.create (input[0]->props.height,
+          input[0]->props.stride / 2, CV_8UC2);
       frameinfo->image.data = (unsigned char *) indata;
     } else {
       LOG_MESSAGE (LOG_LEVEL_WARNING, "Unsupported color format\n");
